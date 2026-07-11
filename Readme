@@ -1,0 +1,353 @@
+# 🏨 Hotel Management System — MERN Stack with End-to-End DevOps Pipeline
+
+A full-featured **Hotel Management System** built on the **MERN stack** (MongoDB, Express, React, Node.js), engineered with a **production-grade DevOps pipeline** covering containerization, orchestration, infrastructure as code, security scanning, code quality gates, and CI/CD automation.
+
+> This repository is not just an application — it's a demonstration of a complete DevOps workflow, from code commit to a running, scanned, and monitored container in Kubernetes.
+
+
+## 🧱 Tech Stack
+
+### Application
+| Layer | Technology |
+|---|---|
+| Frontend | React.js, Redux/Context API, Axios, Bootstrap/Tailwind |
+| Backend | Node.js, Express.js, REST API |
+| Database | MongoDB (Mongoose ORM) |
+| Auth | JWT-based Authentication |
+
+### DevOps & Infrastructure
+| Category | Tool |
+|---|---|
+| Version Control | Git & GitHub |
+| Containerization | Docker, Docker Compose |
+| Orchestration | Kubernetes (K8s) |
+| Infrastructure as Code | Terraform |
+| CI/CD | Jenkins (Declarative Pipeline) |
+| Code Quality | SonarQube |
+| Security Scanning | Trivy (Image & Filesystem scan) |
+| Container Registry | DockerHub  |
+| Cloud Provider | `[AWS ` |
+| Monitoring  | `[Prometheus + Grafana]` |
+
+---
+
+## 🏗️ Architecture Overview
+
+```
+Developer Push (GitHub)
+        │
+        ▼
+   Jenkins Pipeline Triggered (Webhook)
+        │
+   ┌────┴─────────────────────────────────┐
+   │  1. Checkout Code                    │
+   │  2. SonarQube Static Code Analysis   │
+   │  3. Build Docker Images (FE + BE)    │
+   │  4. Trivy Image Vulnerability Scan   │
+   │  5. Push Image to Registry           │
+   │  6. Terraform Provision/Update Infra │
+   │  7. Deploy to Kubernetes (kubectl)   |
+   |     via kubeconfig                   │
+   │  8. Post-deploy health check         │
+   └──────────────────────────────────────┘
+        │
+        ▼
+   Kubernetes Cluster (EKS)
+   ├── Frontend Deployment + Service
+   ├── Backend Deployment + Service
+   ├── MongoDB StatefulSet + PVC
+   └── Ingress Controller (NGINX)
+```
+
+
+---
+
+## 📂 Repository Structure
+
+```
+hotel-management-system/
+├── client/                      # React frontend
+│   ├── src/
+│   ├── Dockerfile
+│   └── .dockerignore
+├── server/                      # Node.js/Express backend
+│   ├── src/
+│   ├── Dockerfile
+│   └── .dockerignore
+├── k8s/                         # Kubernetes manifests
+│   ├── frontend-deployment.yaml
+│   ├── frontend-service.yaml
+│   ├── backend-deployment.yaml
+│   ├── backend-service.yaml
+│   ├── mongo-statefulset.yaml
+│   ├── ingress.yaml
+│   ├── configmap.yaml
+│   └── secrets.yaml
+├── terraform/                   # Infrastructure as Code
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   ├── provider.tf
+│   └── modules/
+│       ├── vpc/
+│       ├── eks/ (or gke/aks)
+│       └── security-groups/
+├── jenkins/
+│   └── Jenkinsfile              # CI/CD pipeline definition
+├── sonar-project.properties     # SonarQube config
+├── docker-compose.yml           # Local multi-container setup
+├── trivy-report/                # Sample scan reports (optional)
+└── README.md
+```
+
+---
+
+## 🐳 Containerization (Docker)
+
+Both frontend and backend are containerized with multi-stage Dockerfiles to keep image sizes minimal and production-ready.
+
+**Run locally with Docker Compose:**
+```bash
+docker-compose up --build
+```
+
+This spins up:
+- `client` → React app served via Nginx (port `5173`)
+- `server` → Node/Express API (port `3000`)
+- `mongo` → MongoDB instance (port `27017`)
+
+**Sample multi-stage Dockerfile (backend):**
+```dockerfile
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+
+FROM node:18-alpine
+WORKDIR /app
+COPY --from=builder /app .
+EXPOSE 3000
+CMD ["node", "server.js"]
+```
+
+---
+
+## ☸️ Kubernetes Deployment
+
+The app is deployed on Kubernetes using separate Deployments and Services for frontend, backend, and database, fronted by an NGINX Ingress.
+
+```bash
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/secrets.yaml
+kubectl apply -f k8s/mongo-statefulset.yaml
+kubectl apply -f k8s/backend-deployment.yaml
+kubectl apply -f k8s/backend-service.yaml
+kubectl apply -f k8s/frontend-deployment.yaml
+kubectl apply -f k8s/frontend-service.yaml
+kubectl apply -f k8s/ingress.yaml
+```
+
+**Key K8s features implemented:**
+- Horizontal Pod Autoscaler (HPA) for backend under load
+- Liveness & readiness probes for self-healing
+- Persistent Volume Claims for MongoDB data
+- ConfigMaps & Secrets for environment separation
+- Rolling updates with zero downtime
+
+Verify:
+```bash
+kubectl get pods,svc,ingress -n hotel-management
+```
+
+---
+
+## 🌍 Infrastructure as Code (Terraform)
+
+Cloud infrastructure (VPC, subnets, security groups, and the Kubernetes cluster itself) is fully provisioned via Terraform — no manual console clicks.
+
+```bash
+cd terraform/
+terraform init
+terraform plan -out=plan.tfplan
+terraform apply plan.tfplan
+```
+
+**Provisions:**
+- VPC with public/private subnets
+- Managed Kubernetes cluster (`EKS`)
+- Security groups / firewall rules
+- IAM roles for CI/CD access
+- Remote state stored in `[S3 + DynamoDB lock / Terraform Cloud]`
+
+---
+
+## 🔄 CI/CD Pipeline (Jenkins)
+
+The `Jenkinsfile` defines a fully automated pipeline triggered on every push to `main`:
+
+```groovy
+pipeline {
+    agent any
+    stages {
+        stage('Checkout') {
+            steps { git branch: 'main', url: 'https://github.com/deepakbadnaware/hotel-management-system.git' }
+        }
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh 'sonar-scanner'
+                }
+            }
+        }
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+        stage('Build Docker Images') {
+            steps {
+                sh 'docker build -t <dockerhub-user>/hms-frontend:${BUILD_NUMBER} ./client'
+                sh 'docker build -t <dockerhub-user>/hms-backend:${BUILD_NUMBER} ./server'
+            }
+        }
+        stage('Trivy Security Scan') {
+            steps {
+                sh 'trivy image --exit-code 1 --severity HIGH,CRITICAL <dockerhub-user>/hms-backend:${BUILD_NUMBER}'
+                sh 'trivy image --exit-code 1 --severity HIGH,CRITICAL <dockerhub-user>/hms-frontend:${BUILD_NUMBER}'
+            }
+        }
+        stage('Push to Registry') {
+            steps {
+                sh 'docker push <dockerhub-user>/hms-frontend:${BUILD_NUMBER}'
+                sh 'docker push <dockerhub-user>/hms-backend:${BUILD_NUMBER}'
+            }
+        }
+        stage('Terraform Apply') {
+            steps {
+                sh 'cd terraform && terraform init && terraform apply -auto-approve'
+            }
+        }
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh 'kubectl apply -f k8s/'
+                sh 'kubectl rollout status deployment/backend-deployment'
+                sh 'kubectl rollout status deployment/frontend-deployment'
+            }
+        }
+    }
+    post {
+        success { echo '✅ Pipeline completed successfully' }
+        failure { echo '❌ Pipeline failed — check logs' }
+    }
+}
+```
+
+**Pipeline stages summary:**
+1. Source checkout from GitHub (webhook-triggered)
+2. Static code analysis via SonarQube
+3. Quality gate enforcement (fails build on critical issues)
+4. Docker image builds (frontend + backend)
+5. Trivy vulnerability scanning (fails on HIGH/CRITICAL CVEs)
+6. Image push to container registry
+7. Infrastructure provisioning/update via Terraform
+8. Kubernetes deployment with rollout verification
+
+---
+
+## 🔍 Code Quality — SonarQube
+
+Static analysis is enforced on every build to catch bugs, code smells, and security vulnerabilities before merge.
+
+`sonar-project.properties`:
+```properties
+sonar.projectKey=hotel-management-system
+sonar.sources=client/src,server/src
+sonar.host.url=http://localhost:9000
+
+```
+
+---
+
+## 🛡️ Security Scanning — Trivy
+
+Every Docker image is scanned for OS and library vulnerabilities before being pushed to the registry.
+
+```bash
+trivy image --severity HIGH,CRITICAL frontend
+trivy fs --severity HIGH,CRITICAL .
+```
+
+Builds are configured to **fail automatically** if HIGH/CRITICAL vulnerabilities are detected, enforcing a shift-left security posture.
+
+
+---
+
+## ⚙️ Environment Variables
+
+Create a `.env` file in `server/` based on `.env.example`:
+
+```env
+PORT=5000
+MONGO_URI=mongodb://mongo:27017/hoteldb
+JWT_SECRET=your_jwt_secret
+NODE_ENV=production
+```
+
+---
+
+## 🚀 Getting Started Locally (Without Docker)
+
+```bash
+# Clone the repo
+git clone https://github.com/deepakbadnaware/hotel-management-system.git
+cd hotel-management-system
+
+# Backend
+cd server
+npm install
+npm start
+
+# Frontend (new terminal)
+cd client
+npm install
+npm start
+```
+
+---
+
+## ✨ Application Features
+
+- 🔐 Role-based authentication (Admin / Staff / Guest)
+- 🛏️ Room booking, availability, and check-in/check-out management
+- 💳 Payment/billing module
+- 📊 Admin dashboard with occupancy analytics
+- 🔍 Search & filter rooms by type, price, availability
+- 📧 Email notifications for booking confirmation
+
+---
+
+## 🎯 Key DevOps Highlights (TL;DR for Recruiters)
+
+- ✅ **Fully automated CI/CD** — code push to production deployment with zero manual steps
+- ✅ **Infrastructure as Code** — entire cloud environment reproducible via Terraform
+- ✅ **Shift-left security** — Trivy scans block vulnerable images from shipping
+- ✅ **Quality gates** — SonarQube enforces code health before merge
+- ✅ **Container orchestration** — self-healing, auto-scaling Kubernetes deployment
+- ✅ **Immutable infrastructure** — every deployment is a fresh, versioned container image
+
+---
+
+
+---
+
+## 👤 Author
+
+**Deepak Badnaware**
+📧 [deepakbadnaware12@gmail.com]
+🔗 [\[LinkedIn Profile\]](https://www.linkedin.com/in/deepakbadnaware/)
+🔗 [\[GitHub Profile\]](https://github.com/deepakbadnaware)
+
+---
