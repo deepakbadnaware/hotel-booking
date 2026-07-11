@@ -26,8 +26,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app .
 
-# Use a non-root user for safety
-USER node
 
 EXPOSE 3000
+
 CMD ["npm", "start"]
